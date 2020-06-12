@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "segment.h"
+#include "debug.h"
 #include <pthread.h>
 
 #include <libavutil/opt.h>
@@ -14,7 +15,7 @@ void save_segment(struct Segment *seg, const char *filename)
 
 void segment_free(struct Segment *seg)
 {
-    printf("Freeing segment\n");
+    DEBUG("Freeing segment\n");
     avformat_free_context(seg->fmt_ctx);
     av_free(seg->io_ctx->buffer);
     av_free(seg->io_ctx);
@@ -27,7 +28,7 @@ void segment_ref(struct Segment *seg)
 {
     pthread_mutex_lock(&seg->nb_read_lock);
     seg->nb_read++;
-    printf("  ref Readers: %d\n", seg->nb_read);
+    DEBUG("  ref Readers: %d\n", seg->nb_read);
     pthread_mutex_unlock(&seg->nb_read_lock);
 }
 
@@ -36,7 +37,7 @@ void segment_unref(struct Segment *seg)
     pthread_mutex_lock(&seg->nb_read_lock);
     seg->nb_read--;
     pthread_mutex_unlock(&seg->nb_read_lock);
-    printf("unref Readers: %d\n", seg->nb_read);
+    DEBUG("unref Readers: %d\n", seg->nb_read);
     if (seg->nb_read == 0) {
         segment_free(seg);
     }
@@ -57,7 +58,7 @@ int segment_write(void *opaque, unsigned char *buf, int buf_size)
     //return fwrite(buf, buf_size, 1, seg->stream);
     seg->size += buf_size;
     seg->buf = (char*) realloc(seg->buf, seg->size);
-    //printf("buf:%p size:%zu\n", seg->buf, seg->size);
+    //DEBUG("buf:%p size:%zu\n", seg->buf, seg->size);
     memcpy(seg->buf + seg->size - buf_size, buf, buf_size);
     return buf_size;
 }
@@ -73,7 +74,7 @@ int segment_read(void *opaque, unsigned char *buf, int buf_size)
     struct AVIOContextInfo *info = (struct AVIOContextInfo*) opaque;
     buf_size = buf_size < info->left ? buf_size : info->left;
 
-    //printf("buf:%p left:%d\n", info->buf, info->left);
+    //DEBUG("buf:%p left:%d\n", info->buf, info->left);
     /* copy internal buffer data to buf */
     memcpy(buf, info->buf, buf_size);
     info->buf  += buf_size;
@@ -122,13 +123,13 @@ void segment_init(struct Segment **seg_p, AVFormatContext *fmt)
     seg->io_ctx->seekable = 0;
     avformat_alloc_output_context2(&seg->fmt_ctx, NULL, "matroska", NULL);
     if ((ret = av_opt_set_int(seg->fmt_ctx, "flush_packets", 1, AV_OPT_SEARCH_CHILDREN)) < 0) {
-        printf("Could not set flush_packets!\n");
+        DEBUG("Could not set flush_packets!\n");
     }
 
     seg->fmt_ctx->flags |= AVFMT_FLAG_GENPTS;
     seg->fmt_ctx->oformat->flags &= AVFMT_NOFILE;
 
-    printf("Initializing segment\n");
+    DEBUG("Initializing segment\n");
 
     for (i = 0; i < fmt->nb_streams; i++) {
         in_stream = fmt->streams[i];
@@ -149,7 +150,7 @@ void segment_init(struct Segment **seg_p, AVFormatContext *fmt)
                 continue;
             }
             av_dict_copy(&out_stream->metadata, in_stream->metadata, 0);
-            //printf("Allocated output stream.\n");
+            //DEBUG("Allocated output stream.\n");
             /*out_stream->codec->codec_tag = 0;
             if (ofmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
                 out_stream->codec->flags |= AV_CODEC_FLAG_GLOBAL_HEADER; */
@@ -165,7 +166,7 @@ void segment_init(struct Segment **seg_p, AVFormatContext *fmt)
     }
 
 
-    printf("Initialized segment.\n");
+    DEBUG("Initialized segment.\n");
     //av_dump_format(seg->fmt_ctx, 0, "(memory)", 1);
 
     *seg_p = seg;

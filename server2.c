@@ -12,6 +12,7 @@
 #include "segment.h"
 #include "buffer.h"
 #include "publisher.h"
+#include "debug.h"
 
 #define BUFFER_SECS 30
 
@@ -36,7 +37,7 @@ struct AcceptInfo {
 void log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt)
 {
     AVRational *time_base = &fmt_ctx->streams[pkt->stream_index]->time_base;
-    printf("pts:%s pts_time:%s dts:%s dts_time:%s duration:%s duration_time:%s stream_index:%d\n",
+    DEBUG("pts:%s pts_time:%s dts:%s dts_time:%s duration:%s duration_time:%s stream_index:%d\n",
            av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, time_base),
            av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, time_base),
            av_ts2str(pkt->duration), av_ts2timestr(pkt->duration, time_base),
@@ -67,12 +68,12 @@ void *read_thread(void *arg)
     }
 
 
-    printf("Finding video stream.\n");
+    DEBUG("Finding video stream.\n");
 
     for (i = 0; i < ifmt_ctx->nb_streams; i++) {
-        printf("Checking stream %zu\n", i);
+        DEBUG("Checking stream %zu\n", i);
         AVStream *stream = ifmt_ctx->streams[i];
-        printf("Got stream\n");
+        DEBUG("Got stream\n");
         AVCodecContext *avctx = avcodec_alloc_context3(NULL);
         if (!avctx)
             return NULL;
@@ -81,11 +82,11 @@ void *read_thread(void *arg)
             return NULL;
         }
         AVCodecParameters *params = stream->codecpar;
-        printf("Got params\n");
+        DEBUG("Got params\n");
         // Segfault here ↓
         enum AVMediaType type = params->codec_type;
         //if (ifmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-        printf("Got type\n");
+        DEBUG("Got type\n");
         if (type == AVMEDIA_TYPE_VIDEO) {
             video_idx = i;
             break;
@@ -94,7 +95,7 @@ void *read_thread(void *arg)
     start = av_gettime_relative() - BUFFER_SECS * AV_TIME_BASE; // read first BUFFER seconds fast
 
     for (;;) {
-        //printf("Reading packet\n");
+        //DEBUG("Reading packet\n");
         ret = av_read_frame(ifmt_ctx, &pkt);
         if (ret < 0) {
             break;
@@ -119,32 +120,32 @@ void *read_thread(void *arg)
             if (seg) {
                 segment_close(seg);
                 buffer_push_segment(info->pub->buffer, seg);
-                printf("New segment pushed.\n");
+                DEBUG("New segment pushed.\n");
                 publish(info->pub);
             }
-            printf("starting new segment\n");
+            DEBUG("starting new segment\n");
             segment_init(&seg, ifmt_ctx);
             seg->id = id++;
-            printf("segment id = %d\n", seg->id);
+            DEBUG("segment id = %d\n", seg->id);
         }
-        //printf("writing frame\n");
+        //DEBUG("writing frame\n");
         segment_ts_append(seg, pkt.dts, pkt.pts);
         ret = av_write_frame(seg->fmt_ctx, &pkt);
         av_packet_unref(&pkt);
         if (ret < 0) {
-            printf("write frame failed\n");
+            DEBUG("write frame failed\n");
         }
 
     }
     segment_close(seg);
     buffer_push_segment(info->pub->buffer, seg);
-    printf("Final segment pushed.\n");
+    DEBUG("Final segment pushed.\n");
     publish(info->pub);
 
 end:
 
     avformat_close_input(&ifmt_ctx);
-    printf("Freed buffer\n");
+    DEBUG("Freed buffer\n");
 
 
     /* close output */
@@ -171,13 +172,13 @@ void write_segment(struct Client *c)
         struct AVIOContextInfo info;
         client_set_state(c, BUSY);
         c->current_segment_id = seg->id;
-        printf("Writing segment, size: %zu, id: %d, client id: %d ofmt_ctx: %p, pb: %p\n", seg->size, seg->id, c->id, c->ofmt_ctx, c->ofmt_ctx->pb); // 0: 0xbf0600 1: 0xbf0600 0x1edf340 0x1e5f600
+        DEBUG("Writing segment, size: %zu, id: %d, client id: %d ofmt_ctx: %p, pb: %p\n", seg->size, seg->id, c->id, c->ofmt_ctx, c->ofmt_ctx->pb); // 0: 0xbf0600 1: 0xbf0600 0x1edf340 0x1e5f600
         info.buf = seg->buf;
         info.left = seg->size;
 
         if (!(fmt_ctx = avformat_alloc_context())) {
             ret = AVERROR(ENOMEM);
-            printf("NOMEM\n");
+            DEBUG("NOMEM\n");
             return;
         }
 
@@ -203,7 +204,7 @@ void write_segment(struct Client *c)
             if (ret < 0) {
                 break;
             }
-            //printf("read frame\n");
+            //DEBUG("read frame\n");
             pkt.dts = seg->ts[pkt_count];
             pkt.pts = seg->ts[pkt_count + 1];
             pkt_count += 2;
@@ -211,13 +212,13 @@ void write_segment(struct Client *c)
             ret = av_write_frame(c->ofmt_ctx, &pkt);
             av_packet_unref(&pkt);
             if (ret < 0) {
-                printf("write_frame to client failed, disconnecting...\n");
+                DEBUG("write_frame to client failed, disconnecting...\n");
                 avformat_close_input(&fmt_ctx);
                 av_free(avio_ctx->buffer);
                 client_disconnect(c);
                 return;
             }
-            //printf("wrote frame to client\n");
+            //DEBUG("wrote frame to client\n");
         }
         avformat_close_input(&fmt_ctx);
         av_free(avio_ctx->buffer);
@@ -271,18 +272,18 @@ void *accept_thread(void *arg)
         if (info->pub->shutdown)
             break;
         status = publisher_gen_status_json(info->pub);
-        fputs(status, stdout);
+        DEBUG(status);
         free(status);
         reply_code = 200;
-        printf("Accepting new clients...\n");
+        DEBUG("Accepting new clients...\n");
         client = NULL;
         if ((ret = avio_accept(server, &client)) < 0) {
-            printf("Error or timeout\n");
-            printf("ret: %d\n", ret);
+            DEBUG("Error or timeout\n");
+            DEBUG("ret: %d\n", ret);
             continue;
         }
-        //printf("No error or timeout\n");
-        //printf("ret: %d\n", ret);
+        //DEBUG("No error or timeout\n");
+        //DEBUG("ret: %d\n", ret);
 
 
         // Append client to client list
@@ -293,14 +294,14 @@ void *accept_thread(void *arg)
             continue;
         }
         if (publisher_reserve_client(info->pub)) {
-            printf("No more slots free\n");
+            DEBUG("No more slots free\n");
             reply_code = 503;
         }
 
         while ((handshake = avio_handshake(client)) > 0) {
-            av_opt_get(client, "method", AV_OPT_SEARCH_CHILDREN, &method);
-            av_opt_get(client, "resource", AV_OPT_SEARCH_CHILDREN, &resource);
-            printf("method: %s resource: %s\n", method, resource);
+            av_opt_get(client, "method", AV_OPT_SEARCH_CHILDREN, (unsigned char **)&method);
+            av_opt_get(client, "resource", AV_OPT_SEARCH_CHILDREN, (unsigned char **)&resource);
+            DEBUG("method: %s resource: %s\n", method, resource);
             if (method && strlen(method) && strncmp("GET", method, 3)) {
                 reply_code = 400;
             }
@@ -332,7 +333,7 @@ void *accept_thread(void *arg)
         }
 
         avformat_alloc_output_context2(&ofmt_ctx, NULL, "matroska", NULL);
-        printf("allocated new ofmt_ctx: %p\n", ofmt_ctx);
+        DEBUG("allocated new ofmt_ctx: %p\n", ofmt_ctx);
 
         if (!ofmt_ctx) {
             fprintf(stderr, "Could not create output context\n");
@@ -360,7 +361,7 @@ void *accept_thread(void *arg)
                 continue;
             }
             av_dict_copy(&out_stream->metadata, in_stream->metadata, 0);
-            printf("Allocated output stream.\n");
+            DEBUG("Allocated output stream.\n");
             /*out_stream->codec->codec_tag = 0;
             if (ofmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
                 out_stream->codec->flags |= AV_CODEC_FLAG_GLOBAL_HEADER; */
@@ -374,12 +375,12 @@ void *accept_thread(void *arg)
         }
         publisher_add_client(info->pub, ofmt_ctx);
         ofmt_ctx = NULL;
-        printf("Accepted new client! ofmt_ctx: %p pb: %p\n", ofmt_ctx, client);
+        DEBUG("Accepted new client! ofmt_ctx: %p pb: %p\n", ofmt_ctx, client);
 
     }
 
     avio_close(server);
-    printf("Shut down http server.\n");
+    DEBUG("Shut down http server.\n");
 
     return NULL;
 }
@@ -393,7 +394,7 @@ void *write_thread(void *arg)
     for (;;) {
         nb_free = 0;
         usleep(500000);
-        printf("Checking clients, thread: %d\n", info->thread_id);
+        //DEBUG("Checking clients, thread: %d\n", info->thread_id);
         for (i = 0; i < MAX_CLIENTS; i++) {
             c = &info->pub->subscribers[i];
             //client_print(c);
@@ -432,12 +433,12 @@ int main(int argc, char *argv[])
     AVFormatContext *ifmt_ctx = NULL;
 
     rinfo.in_filename = "pipe:0";
-    ainfo.out_uri = "http://0:8080";
+    ainfo.out_uri = "http://0:9999";
     if (argc > 1) {
         rinfo.in_filename = argv[1];
     }
 
-    av_register_all();
+    //av_register_all();
     avformat_network_init();
 
     if ((ret = avformat_open_input(&ifmt_ctx, rinfo.in_filename, 0, 0))) {

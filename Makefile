@@ -7,17 +7,17 @@ LAV_CFLAGS = `pkg-config --cflags libavformat libavcodec libavutil`
 
 all: server
 
-server: segment.o buffer.o publisher.o server2.c
+server: segment.o buffer.o publisher.o server2.c debug.h
 	#$(CC) -g -Wall $(LAV_CFLAGS) $(LAV_LDFLAGS) -pthread -o server segment.o buffer.o publisher.o server2.c
 	$(CC) -g -Wall $(LAV_CFLAGS) -pthread -o server segment.o buffer.o publisher.o server2.c $(LAV_LDFLAGS)
 
-segment.o: segment.c segment.h
+segment.o: segment.c segment.h debug.h
 	$(CC) -g -Wall $(LAV_CFLAGS) -pthread -c segment.c
 
-buffer.o: buffer.c buffer.h
+buffer.o: buffer.c buffer.h debug.h
 	$(CC) -g -Wall $(LAV_CFLAGS) -pthread -c buffer.c
 
-publisher.o: publisher.c publisher.h
+publisher.o: publisher.c publisher.h debug.h
 	$(CC) -g -Wall $(LAV_CFLAGS) -pthread -c publisher.c
 
 clean:

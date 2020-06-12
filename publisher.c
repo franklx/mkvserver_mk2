@@ -1,32 +1,33 @@
 #include "publisher.h"
+#include "debug.h"
 
 void client_print(struct Client *c)
 {
-    printf("State: ");
+    DEBUG("State: ");
     switch(c->buffer->state) {
     case FREE:
-        printf("FREE");
+        DEBUG("FREE");
         break;
     case RESERVED:
-        printf("RESERVED");
+        DEBUG("RESERVED");
         break;
     case WAIT:
-        printf("WAIT");
+        DEBUG("WAIT");
         break;
     case WRITABLE:
-        printf("WRITABLE");
+        DEBUG("WRITABLE");
         break;
     case BUSY:
-        printf("BUSY");
+        DEBUG("BUSY");
         break;
     case BUFFER_FULL:
-        printf("BUFFER_FULL");
+        DEBUG("BUFFER_FULL");
         break;
     default:
-        printf("LOL");
+        DEBUG("LOL");
         break;
     }
-    printf("\n");
+    DEBUG("\n");
 }
 
 void client_disconnect(struct Client *c)
@@ -109,14 +110,14 @@ void publisher_add_client(struct PublisherContext *pub, AVFormatContext *ofmt_ct
     for(i = 0; i < MAX_CLIENTS; i++) {
         switch(pub->subscribers[i].buffer->state) {
         case RESERVED:
-            printf("Put new client at %d, ofmt_ctx: %p pb: %p\n", i, ofmt_ctx, ofmt_ctx->pb);
+            DEBUG("Put new client at %d, ofmt_ctx: %p pb: %p\n", i, ofmt_ctx, ofmt_ctx->pb);
             pub->subscribers[i].ofmt_ctx = ofmt_ctx;
             buffer_set_state(pub->subscribers[i].buffer, WRITABLE);
             client_set_state(&pub->subscribers[i], WRITABLE);
             for (j = 0; j < BUFFER_SEGMENTS; j++) {
                 if ((prebuffer_seg = buffer_get_segment_at(pub->fs_buffer, pub->fs_buffer->read + j))) {
                     buffer_push_segment(pub->subscribers[i].buffer, prebuffer_seg);
-                    printf("pushed prebuffer segment.\n");
+                    DEBUG("pushed prebuffer segment.\n");
                 }
             }
             return;
@@ -164,7 +165,7 @@ void publish(struct PublisherContext *pub)
     buffer_drop_segment(pub->buffer);
     if (pub->fs_buffer->nb_segs == BUFFER_SEGMENTS) {
         buffer_drop_segment(pub->fs_buffer);
-        printf("Dropped segment from prebuffer buffer.\n");
+        DEBUG("Dropped segment from prebuffer buffer.\n");
     }
 }
 
